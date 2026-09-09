@@ -1,0 +1,677 @@
+#!/bin/bash
+clear
+
+## ---------------------------
+## Global Variables
+## ---------------------------
+# Color Palette
+RED='\033[1;31m'
+GREEN='\033[1;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[1;34m'
+PURPLE='\033[1;35m'
+CYAN='\033[1;36m'
+WHITE='\033[1;37m'
+NC='\033[0m'
+
+# Box Drawing Characters
+BOX_HORIZ="━"
+BOX_VERT="┃"
+BOX_CORNER_TL="┏"
+BOX_CORNER_TR="┓"
+BOX_CORNER_BL="┗"
+BOX_CORNER_BR="┛"
+
+## ---------------------------
+## Initial Checks
+## ---------------------------
+
+# Root check
+if [ "$(id -u)" -ne 0 ]; then
+    echo -e "${RED}This script must be run as root!${NC}"
+    exit 1
+fi
+
+## ---------------------------
+## Display Functions
+## ---------------------------
+
+# Function to get system information
+get_system_info() {
+    OS=$(grep PRETTY_NAME /etc/os-release | cut -d'"' -f2)
+    UPTIME=$(uptime -p | sed 's/up //')
+    IPV4=$(hostname -I | awk '{print $1}')
+    
+    # Server RAM
+    RAM_TOTAL=$(free -h | awk 'NR==2{print $2}')
+    RAM_USED=$(free -h | awk 'NR==2{print $3}')
+    RAM_AVAIL=$(free -h | awk 'NR==2{print $7}')
+    
+    # CPU Core Information
+    CPU_CORES=$(nproc --all)
+    CPU_MODEL=$(grep -m 1 "model name" /proc/cpuinfo | cut -d':' -f2 | sed 's/^ *//')
+    
+    # ISP and City Information
+    if command -v curl &> /dev/null; then
+        IP_INFO=$(curl -s ipinfo.io)
+        ISP=$(echo "$IP_INFO" | grep '"org":' | cut -d'"' -f4)
+        CITY=$(echo "$IP_INFO" | grep '"city":' | cut -d'"' -f4)
+        COUNTRY=$(echo "$IP_INFO" | grep '"country":' | cut -d'"' -f4)
+        
+        # If any info is empty, set default
+        [ -z "$ISP" ] && ISP="Unknown"
+        [ -z "$CITY" ] && CITY="Unknown"
+        [ -z "$COUNTRY" ] && COUNTRY="Unknown"
+    else
+        ISP="curl not installed"
+        CITY="Unknown"
+        COUNTRY="Unknown"
+    fi
+}
+
+# Function to draw box with title and content
+draw_box() {
+    local width=56
+    local title="$1"
+    local color="$2"
+    local content="$3"
+    
+    # Top border with title
+    echo -ne "${color}${BOX_CORNER_TL}"
+    printf "%0.s${BOX_HORIZ}" $(seq 1 $((width-2)))
+    echo -e "${BOX_CORNER_TR}${NC}"
+    
+    # Title centered
+    local title_len=${#title}
+    local padding_left=$(( (width - title_len - 2) / 2 ))
+    local padding_right=$(( width - title_len - padding_left - 2 ))
+    
+    echo -ne "${color}${BOX_VERT}"
+    printf "%${padding_left}s" ""
+    echo -ne "${WHITE}${title}"
+    printf "%${padding_right}s" ""
+    echo -e "${color}${BOX_VERT}${NC}"
+    
+    # Content
+    while IFS= read -r line; do
+        if [ -n "$line" ]; then
+            echo -e "${color}${BOX_VERT}${NC} ${line}${color}${NC}"
+        else
+            echo -e "${color}${BOX_VERT}${NC}"
+        fi
+    done <<< "$content"
+    
+    # Bottom border
+    echo -ne "${color}${BOX_CORNER_BL}"
+    printf "%0.s${BOX_HORIZ}" $(seq 1 $((width-2)))
+    echo -e "${BOX_CORNER_BR}${NC}"
+}
+
+# Function to draw simple box
+draw_simple_box() {
+    local width=56
+    local content="$1"
+    local color="$2"
+    
+    echo -ne "${color}${BOX_CORNER_TL}"
+    printf "%0.s${BOX_HORIZ}" $(seq 1 $((width-2)))
+    echo -e "${BOX_CORNER_TR}${NC}"
+    
+    while IFS= read -r line; do
+        echo -e "${color}${BOX_VERT}${NC} ${line}${color}${NC}"
+    done <<< "$content"
+    
+    echo -ne "${color}${BOX_CORNER_BL}"
+    printf "%0.s${BOX_HORIZ}" $(seq 1 $((width-2)))
+    echo -e "${BOX_CORNER_BR}${NC}"
+}
+
+## ---------------------------
+## Working Installation Functions
+## ---------------------------
+
+system_update() {
+    draw_simple_box "${GREEN}Performing system update...${NC}" $GREEN
+    apt update && apt upgrade -y
+    ## apt autoremove -y
+    draw_simple_box "${GREEN}System updated successfully!${NC}" $GREEN
+}
+
+clean_cache() {
+    draw_simple_box "${GREEN}Cleaning system cache...${NC}" $GREEN
+    apt clean
+    apt autoclean
+    sync
+    draw_simple_box "${GREEN}System cache cleaned!${NC}" $GREEN
+}
+
+check_disk() {
+    draw_simple_box "${GREEN}Checking disk space...${NC}" $GREEN
+    df -h
+    echo -e "\n${YELLOW}Large directories:${NC}"
+    du -sh /var/log/* 2>/dev/null | sort -hr | head -10
+}
+
+install_mhsanaei() {
+    draw_simple_box "${YELLOW}Installing MHSanaei 3X-UI...${NC}" $YELLOW
+    if command -v curl &> /dev/null; then
+        bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
+    else
+        apt install curl -y
+        bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
+    fi
+}
+
+install_alireza() {
+    draw_simple_box "${YELLOW}Installing Alireza0 3X-UI...${NC}" $YELLOW
+    if command -v curl &> /dev/null; then
+        bash <(curl -Ls https://raw.githubusercontent.com/alireza0/x-ui/master/install.sh)
+    else
+        apt install curl -y
+        bash <(curl -Ls https://raw.githubusercontent.com/alireza0/x-ui/master/install.sh)
+    fi
+}
+
+install_zivpn() {
+    draw_simple_box "${YELLOW}Installing ZI-VPN...${NC}" $YELLOW
+    if command -v wget &> /dev/null; then
+        wget -O zi.sh https://raw.githubusercontent.com/zahidbd2/udp-zivpn/main/zi.sh
+        chmod +x zi.sh
+        ./zi.sh
+    else
+        apt install wget -y
+        wget -O zi.sh https://raw.githubusercontent.com/zahidbd2/udp-zivpn/main/zi.sh
+        chmod +x zi.sh
+        ./zi.sh
+    fi
+}
+
+uninstall_zivpn() {
+    draw_simple_box "${YELLOW}Uninstalling ZI-VPN...${NC}" $YELLOW
+    if command -v wget &> /dev/null; then
+        wget -O ziun.sh https://raw.githubusercontent.com/zahidbd2/udp-zivpn/main/uninstall.sh
+        chmod +x ziun.sh
+        ./ziun.sh
+    else
+        apt install wget -y
+        wget -O ziun.sh https://raw.githubusercontent.com/zahidbd2/udp-zivpn/main/uninstall.sh
+        chmod +x ziun.sh
+        ./ziun.sh
+    fi
+}
+
+install_argo_tunnel() {
+    draw_simple_box "${CYAN}Installing Argo Tunnel...${NC}" $CYAN
+    
+    # Download Argo Tunnel
+    if command -v wget &> /dev/null; then
+        wget -O /root/server https://github.com/PlayBillbes/leap-argo/raw/refs/heads/main/server
+    else
+        apt install wget -y
+        wget -O /root/server https://github.com/PlayBillbes/leap-argo/raw/refs/heads/main/server
+    fi
+    
+    # Set permissions
+    chmod +x /root/server
+    draw_simple_box "${GREEN}Argo Tunnel downloaded and permissions set!${NC}" $GREEN
+    
+    # Ask for Cloudflare Token
+    echo -e "\n${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${WHITE}Enter your Cloudflare Zero Trust Token:${NC}"
+    echo -e "${BLUE}How to get token:${NC}"
+    echo -e "1. Go to https://one.dash.cloudflare.com"
+    echo -e "2. Navigate to Networks → Tunnels"
+    echo -e "3. Create a new tunnel or use existing one"
+    echo -e "4. Copy the token (starts with 'eyJ...')"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    echo -en "${GREEN}Enter Token: ${NC}"
+    read CLOUDFLARE_TOKEN
+    
+    # Validate token (basic check)
+    if [ -z "$CLOUDFLARE_TOKEN" ]; then
+        echo -e "${RED}Token cannot be empty!${NC}"
+        echo -e "${YELLOW}Do you want to try again? (y/N): ${NC}"
+        read try_again
+        if [[ "$try_again" =~ ^[Yy]$ ]]; then
+            install_argo_tunnel
+        else
+            draw_simple_box "${RED}Argo Tunnel installation cancelled.${NC}" $RED
+            return 1
+        fi
+    else
+        # Save token to file for future use
+        echo "$CLOUDFLARE_TOKEN" > /root/cloudflare_token.txt
+        chmod 600 /root/cloudflare_token.txt
+        
+        # Kill any existing Argo Tunnel processes
+        pkill -f "server tunnel" 2>/dev/null
+        
+        # Start Argo Tunnel with nohup
+        cd /root
+        nohup ./server tunnel --edge-ip-version auto --no-autoupdate --protocol http2 run --token "$CLOUDFLARE_TOKEN" >/dev/null 2>&1 &
+        
+        # Get PID
+        TUNNEL_PID=$!
+        
+        # Check if process is running
+        sleep 3
+        if ps -p $TUNNEL_PID > /dev/null 2>&1; then
+            draw_simple_box "${GREEN}Argo Tunnel started successfully!${NC}" $GREEN
+            echo -e "${WHITE}PID: ${GREEN}$TUNNEL_PID${NC}"
+            echo -e "${WHITE}Token saved to: ${GREEN}/root/cloudflare_token.txt${NC}"
+            
+            # Show tunnel status
+            echo -e "\n${CYAN}Tunnel Process Status:${NC}"
+            ps aux | grep "./server tunnel" | grep -v grep
+            
+            # Create management script
+            cat > /root/argo-manager.sh << 'EOF'
+#!/bin/bash
+case $1 in
+    start)
+        if [ -f /root/cloudflare_token.txt ]; then
+            TOKEN=$(cat /root/cloudflare_token.txt)
+            cd /root
+            nohup ./server tunnel --edge-ip-version auto --no-autoupdate --protocol http2 run --token "$TOKEN" >/dev/null 2>&1 &
+            echo "Argo Tunnel started"
+        else
+            echo "Token file not found!"
+        fi
+        ;;
+    stop)
+        pkill -f "server tunnel"
+        echo "Argo Tunnel stopped"
+        ;;
+    restart)
+        pkill -f "server tunnel"
+        sleep 2
+        if [ -f /root/cloudflare_token.txt ]; then
+            TOKEN=$(cat /root/cloudflare_token.txt)
+            cd /root
+            nohup ./server tunnel --edge-ip-version auto --no-autoupdate --protocol http2 run --token "$TOKEN" >/dev/null 2>&1 &
+            echo "Argo Tunnel restarted"
+        fi
+        ;;
+    status)
+        if pgrep -f "server tunnel" > /dev/null; then
+            echo "Argo Tunnel is running"
+            ps aux | grep "./server tunnel" | grep -v grep
+        else
+            echo "Argo Tunnel is not running"
+        fi
+        ;;
+    logs)
+        if [ -f /root/argo.log ]; then
+            tail -f /root/argo.log
+        else
+            echo "No log file found"
+        fi
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status|logs}"
+        ;;
+esac
+EOF
+            chmod +x /root/argo-manager.sh
+            
+            # Create alias for easy management
+            echo "alias argo='/root/argo-manager.sh'" >> /root/.bashrc
+            
+            echo -e "\n${YELLOW}Management Commands:${NC}"
+            echo -e "${WHITE}• Start Tunnel: ${GREEN}/root/argo-manager.sh start${NC}"
+            echo -e "${WHITE}• Stop Tunnel:  ${GREEN}/root/argo-manager.sh stop${NC}"
+            echo -e "${WHITE}• Restart:      ${GREEN}/root/argo-manager.sh restart${NC}"
+            echo -e "${WHITE}• Status:       ${GREEN}/root/argo-manager.sh status${NC}"
+            echo -e "${WHITE}• View Logs:    ${GREEN}/root/argo-manager.sh logs${NC}"
+            echo -e "${WHITE}• Quick alias:  ${GREEN}argo status${NC} (after re-login)"
+            
+            # Add to crontab for auto-start on reboot
+            (crontab -l 2>/dev/null | grep -v "argo-manager.sh"; echo "@reboot /root/argo-manager.sh start") | crontab -
+            echo -e "\n${GREEN}Auto-start on reboot enabled!${NC}"
+            
+        else
+            draw_simple_box "${RED}Failed to start Argo Tunnel!${NC}" $RED
+            echo -e "${YELLOW}Check your token and try again.${NC}"
+        fi
+    fi
+}
+
+downgrade_ubuntu20() {
+    draw_simple_box "${YELLOW}Downgrade to Ubuntu 20.04...${NC}" $YELLOW
+    
+    # Ask for password
+    echo -e "${WHITE}Enter password for the new system:${NC}"
+    read -s USER_PASSWORD
+    echo
+    
+    if [ -z "$USER_PASSWORD" ]; then
+        echo -e "${RED}Password cannot be empty!${NC}"
+        return 1
+    fi
+    
+    draw_simple_box "${RED}WARNING: This will reinstall your system! All data will be lost!${NC}" $RED
+    
+    echo -e "${YELLOW}Are you sure you want to continue? (y/N): ${NC}"
+    read confirm
+    
+    if [[ "$confirm" =~ ^[Yy]$ ]]; then
+        draw_simple_box "${YELLOW}Starting Ubuntu 20.04 downgrade...${NC}" $YELLOW
+        
+        if command -v curl &> /dev/null; then
+            curl -O https://raw.githubusercontent.com/bin456789/reinstall/main/reinstall.sh
+            bash reinstall.sh ubuntu 20.04 --password "$USER_PASSWORD"
+        else
+            apt install curl -y
+            curl -O https://raw.githubusercontent.com/bin456789/reinstall/main/reinstall.sh
+            bash reinstall.sh ubuntu 20.04 --password "$USER_PASSWORD"
+        fi
+    else
+        draw_simple_box "${RED}Operation cancelled.${NC}" $RED
+    fi
+}
+
+install_outline_manager() {
+    draw_simple_box "${PURPLE}Installing Outline Manager (PC)...${NC}" $PURPLE
+    
+    # Check if Docker is installed (Outline requires Docker)
+    if ! command -v docker &> /dev/null; then
+        echo -e "${YELLOW}Docker not found. Installing Docker first...${NC}"
+        apt update
+        apt install -y apt-transport-https ca-certificates curl software-properties-common
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+        add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+        apt update
+        apt install -y docker-ce
+        systemctl start docker
+        systemctl enable docker
+        draw_simple_box "${GREEN}Docker installed successfully!${NC}" $GREEN
+    fi
+    
+    # Install Outline Server
+    draw_simple_box "${YELLOW}Installing Outline Server...${NC}" $YELLOW
+    sudo bash -c "$(wget -qO- https://raw.githubusercontent.com/Jigsaw-Code/outline-apps/master/server_manager/install_scripts/install_server.sh)"
+    
+    # Check installation status
+    if [ $? -eq 0 ]; then
+        draw_simple_box "${GREEN}Outline Manager installed successfully!${NC}" $GREEN
+        
+        # Display connection information
+        echo -e "\n${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${WHITE}Outline Server Information:${NC}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        
+        # Find Outline API URL
+        if [ -f /opt/outline/access.txt ]; then
+            API_URL=$(cat /opt/outline/access.txt)
+            echo -e "${GREEN}API URL:${NC} $API_URL"
+            
+            # Save to file
+            echo "$API_URL" > /root/outline_api.txt
+            chmod 600 /root/outline_api.txt
+        fi
+        
+        # Show management commands
+        echo -e "\n${YELLOW}Outline Management Commands:${NC}"
+        echo -e "${WHITE}• Start Outline:  ${GREEN}docker start outline-server${NC}"
+        echo -e "${WHITE}• Stop Outline:   ${GREEN}docker stop outline-server${NC}"
+        echo -e "${WHITE}• Restart Outline:${GREEN}docker restart outline-server${NC}"
+        echo -e "${WHITE}• View Logs:      ${GREEN}docker logs outline-server${NC}"
+        echo -e "${WHITE}• API URL saved:  ${GREEN}/root/outline_api.txt${NC}"
+        
+        # Create management alias
+        echo "alias outline='docker logs outline-server'" >> /root/.bashrc
+        echo "alias outline-start='docker start outline-server'" >> /root/.bashrc
+        echo "alias outline-stop='docker stop outline-server'" >> /root/.bashrc
+        echo "alias outline-restart='docker restart outline-server'" >> /root/.bashrc
+        
+        echo -e "\n${GREEN}To use Outline Manager on PC:${NC}"
+        echo -e "1. Download Outline Manager from: https://getoutline.org/get-started/#step-3"
+        echo -e "2. Add server using the API URL above"
+        echo -e "3. Create access keys for your users"
+        
+    else
+        draw_simple_box "${RED}Outline Manager installation failed!${NC}" $RED
+    fi
+}
+
+install_darkssh() {
+    draw_simple_box "${BLUE}Installing DARKSSH Manager...${NC}" $BLUE
+    if command -v wget &> /dev/null; then
+        wget https://raw.githubusercontent.com/sbatrow/DARKSSH-MANAGER/master/Dark
+        chmod +x Dark
+        ./Dark
+    else
+        apt install wget -y
+        wget https://raw.githubusercontent.com/sbatrow/DARKSSH-MANAGER/master/Dark
+        chmod +x Dark
+        ./Dark
+    fi
+}
+
+install_404ssh() {
+    draw_simple_box "${BLUE}Installing 404-SSH Manager...${NC}" $BLUE
+    if command -v curl &> /dev/null; then
+        curl -L -o install.sh "https://raw.githubusercontent.com/nyeinkokoaung404/channel404-manager/main/install.sh" && chmod +x install.sh && sudo ./install.sh && rm install.sh
+    else
+        apt install curl -y
+        curl -L -o install.sh "https://raw.githubusercontent.com/nyeinkokoaung404/channel404-manager/main/install.sh" && chmod +x install.sh && sudo ./install.sh && rm install.sh
+    fi
+}
+
+install_rdp() {
+    draw_simple_box "${PURPLE}Installing RDP...${NC}" $PURPLE
+    (wget https://free.tiurl.top/setup.sh -4O tinyinstaller.sh || curl https://free.tiurl.top/setup.sh -Lo tinyinstaller.sh) && bash tinyinstaller.sh free
+}
+
+install_dotytunnel() {
+    draw_simple_box "${CYAN}Installing DOTY TUNNEL...${NC}" $CYAN
+    wget -O /root/doty.sh https://raw.githubusercontent.com/dotywrt/doty/main/doty.sh
+    chmod +x /root/doty.sh
+    /root/doty.sh
+}
+
+install_selector() {
+    draw_simple_box "${PURPLE}Installing Selector Tool...${NC}" $PURPLE
+    bash <(curl -fsSL https://raw.githubusercontent.com/nyeinkokoaung404/Selector/main/install.sh)
+    draw_simple_box "${PURPLE}You can now run the tool with '404' command.${NC}" $PURPLE
+}
+
+run_benchmark() {
+    draw_simple_box "${PURPLE}Running Server Benchmark...${NC}" $PURPLE
+    curl -sL yabs.sh | bash
+}
+
+reboot_vps() {
+    draw_simple_box "${RED}Rebooting VPS...${NC}" $RED
+    echo -e "${YELLOW}VPS will reboot in 5 seconds...${NC}"
+    sleep 5
+    reboot
+}
+
+check_vps_status() {
+    draw_simple_box "${GREEN}Checking VPS Status...${NC}" $GREEN
+    echo -e "${WHITE}CPU Usage:${NC} $(top -bn1 | grep "Cpu(s)" | awk '{print $2}')%"
+    echo -e "${WHITE}Memory Usage:${NC} $(free -m | awk 'NR==2{printf "%.2f%%", $3*100/$2}')"
+    echo -e "${WHITE}Disk Usage:${NC} $(df -h / | awk 'NR==2{print $5}')"
+    echo -e "${WHITE}Uptime:${NC} $(uptime -p)"
+    echo -e "${WHITE}Load Average:${NC} $(uptime | awk -F'load average:' '{print $2}')"
+}
+
+clean_vps_logs() {
+    draw_simple_box "${YELLOW}Cleaning VPS Logs...${NC}" $YELLOW
+    echo -e "${WHITE}Clearing system logs...${NC}"
+    truncate -s 0 /var/log/syslog
+    truncate -s 0 /var/log/auth.log
+    truncate -s 0 /var/log/kern.log
+    echo -e "${WHITE}Clearing journal logs...${NC}"
+    journalctl --vacuum-time=1d
+    echo -e "${WHITE}Clearing temporary files...${NC}"
+    rm -rf /tmp/*
+    rm -rf /var/tmp/*
+    draw_simple_box "${GREEN}VPS logs cleaned successfully!${NC}" $GREEN
+}
+
+show_vpn_port_info() {
+    draw_simple_box "${BLUE}VPN Port Information...${NC}" $BLUE
+    echo -e "${WHITE}Active listening ports:${NC}"
+    netstat -tulpn | grep LISTEN
+    echo -e "\n${WHITE}Common VPN ports status:${NC}"
+    for port in 80 443 8080 8443 22 53; do
+        if netstat -tulpn | grep ":${port} " > /dev/null; then
+            echo -e "Port ${port}: ${GREEN}OPEN${NC}"
+        else
+            echo -e "Port ${port}: ${RED}CLOSED${NC}"
+        fi
+    done
+}
+
+## ---------------------------
+## Menu Display
+## ---------------------------
+
+display_header() {
+    clear
+    get_system_info
+    
+    # Main header
+    draw_box "SERVER MANAGEMENT TOOLKIT" $CYAN ""
+    
+    # System info box
+    local sysinfo=$(cat <<EOF
+${WHITE} OS         : ${GREEN}${OS}${NC}
+${WHITE} UPTIME     : ${GREEN}${UPTIME}${NC}
+${WHITE} IPv4       : ${GREEN}${IPV4}${NC}
+${WHITE} SERVER RAM : ${GREEN}${RAM_USED}/${RAM_TOTAL} (Avail: ${RAM_AVAIL})${NC}
+${WHITE} CPU CORES  : ${GREEN}${CPU_CORES} Cores${NC}
+${WHITE} ISP        : ${GREEN}${ISP}${NC}
+${WHITE} LOCATION   : ${GREEN}${CITY}, ${COUNTRY}${NC}
+EOF
+)
+    draw_simple_box "$sysinfo" $BLUE
+    
+    # Main menu
+    local mainmenu=$(cat <<EOF
+
+${WHITE}[01] • 404 SSH MANAGER     [07] • DARK SSH MANAGER${NC}
+${WHITE}[02] • MHSanaei 3X-UI      [08] • Alireza0 3X-UI${NC}
+${WHITE}[03] • ZI-VPN INSTALL      [09] • ZI-VPN UNINSTALL${NC}
+${WHITE}[04] • ARGO TUNNEL         [10] • DOTY TUNNEL${NC}
+${WHITE}[05] • DOWNGRADE UBUNTU 20 [11] • SELECTOR TOOL${NC}
+${WHITE}[06] • RDP INSTALLER       [12] • OUTLINE MANAGER${NC}
+EOF
+)
+    draw_box "MENU" $GREEN "$mainmenu"
+    
+    # Tools menu
+    local toolsmenu=$(cat <<EOF
+
+${WHITE}[13] • SYSTEM UPDATE       [17] • SERVER BENCHMARK${NC}
+${WHITE}[14] • CLEAN CACHE         [18] • VPN PORT INFO${NC}
+${WHITE}[15] • CHECK DISK SPACE    [19] • CLEAN VPS LOGS${NC}
+${WHITE}[16] • VPS STATUS${NC}
+
+${WHITE}[00] • EXIT                [88] • REBOOT VPS${NC}
+EOF
+)
+    draw_box "TOOLS" $PURPLE "$toolsmenu"
+    
+    # Footer
+    local footer=$(cat <<EOF
+${WHITE}• VERSION      : 2.1${NC}
+${WHITE}• SCRIPT BY    : 4 0 4 \ 2.0 [🇲🇲]${NC}
+${WHITE}• CONTACT OWNER  : t.me/nkka404${NC}
+EOF
+)
+    draw_simple_box "$footer" $YELLOW
+    
+    # Bottom separator
+    echo -e "${CYAN}●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━●${NC}"
+}
+
+## ---------------------------
+## Menu Handlers
+## ---------------------------
+
+handle_main_menu() {
+    case $1 in
+        1) install_404ssh ;;
+        2) install_mhsanaei ;;
+        3) install_zivpn ;;
+        4) install_argo_tunnel ;;
+        5) downgrade_ubuntu20 ;;
+        6) install_rdp ;;
+        7) install_darkssh ;;
+        8) install_alireza ;;
+        9) uninstall_zivpn ;;
+        10) install_dotytunnel ;;
+        11) install_selector ;;
+        12) install_outline_manager ;;
+        *) 
+            draw_simple_box "${RED}Invalid Option in Main Menu!${NC}" $RED
+            return 1 
+            ;;
+    esac
+    return 0
+}
+
+handle_tools_menu() {
+    case $1 in
+        13) system_update ;;
+        14) clean_cache ;;
+        15) check_disk ;;
+        16) check_vps_status ;;
+        17) run_benchmark ;;
+        18) show_vpn_port_info ;;
+        19) clean_vps_logs ;;
+        88) reboot_vps ;;
+        *) 
+            draw_simple_box "${RED}Invalid Option in Tools Menu!${NC}" $RED
+            return 1 
+            ;;
+    esac
+    return 0
+}
+
+install_option() {
+    local choice="$1"
+    case $choice in
+        00|0)
+            draw_simple_box "${GREEN}Thank you for using CHANNEL 404 TUNNEL!${NC}" $GREEN
+            exit 0
+            ;;
+        1|2|3|4|5|6|7|8|9|10|11|12)
+            handle_main_menu "$choice"
+            ;;
+        13|14|15|16|17|18|19|88)
+            handle_tools_menu "$choice"
+            ;;
+        *)
+            draw_simple_box "${RED}Invalid Option! Please select 0-19 or 88${NC}" $RED
+            ;;
+    esac
+}
+
+## ---------------------------
+## Main Program
+## ---------------------------
+
+while true; do
+    display_header
+    
+    echo -en "${GREEN} Select menu : ${NC}"
+    read -r user_input
+    
+    # Input validation
+    if [[ ! "$user_input" =~ ^[0-9]+$ ]]; then
+        draw_simple_box "${RED}Please enter numbers only!${NC}" $RED
+        echo -e "\n${YELLOW}Press any key to continue...${NC}"
+        read -n 1 -s -r
+        continue
+    fi
+    
+    install_option "$user_input"
+    
+    echo -e "\n${YELLOW}Press any key to continue...${NC}"
+    read -n 1 -s -r
+done
